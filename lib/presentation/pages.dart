@@ -347,7 +347,7 @@ class _ArticlesPageState extends State<ArticlesPage>
       builder: (items) => ListView.separated(
         padding: const EdgeInsets.all(20),
         itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (_, i) {
           final item = items[i];
           return Card(
@@ -418,7 +418,7 @@ class _PeoplePageState extends State<PeoplePage>
       builder: (items) => ListView.separated(
         padding: const EdgeInsets.all(20),
         itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
         itemBuilder: (_, i) {
           final item = items[i];
           return Card(
@@ -539,7 +539,7 @@ class ProductCard extends StatelessWidget {
               item.thumbnail,
               width: double.infinity,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const ColoredBox(
+              errorBuilder: (_, _, _) => const ColoredBox(
                 color: Color(0xffeee8df),
                 child: Center(child: Icon(Icons.image_not_supported)),
               ),

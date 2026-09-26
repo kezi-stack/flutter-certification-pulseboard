@@ -15,6 +15,11 @@ Application Flutter complète construite pour démontrer les compétences demand
 - Repository Pattern ;
 - 5 tests unitaires de la couche repository/auth.
 
+## 0. Vérification locale
+
+Après installation des dépendances, exécuter `flutter analyze` et `flutter test`.
+Le client API déclare explicitement son `SessionStore` afin que l’injection du token, le refresh JWT et la persistance de session compilent correctement.
+
 ## 1. API utilisée
 
 L'application utilise **DummyJSON** :

@@ -73,5 +73,6 @@ class ApiClient {
     );
   }
 
+  final SessionStore store;
   final Dio dio;
 }
