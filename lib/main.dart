@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'data/api_client.dart';
 import 'data/local_store.dart';
 import 'data/repositories.dart';
+import 'domain/repositories.dart';
 import 'presentation/pages.dart';
 
 Future<void> main() async {
@@ -12,18 +13,23 @@ Future<void> main() async {
 
   final authBox = await Hive.openBox<String>('auth');
   final cacheBox = await Hive.openBox<String>('cache');
-
   final store = LocalStore(authBox, cacheBox);
   final api = ApiClient(store);
   final auth = AuthRepository(api, store);
+  final catalog = CatalogRepository(api, store);
 
-  runApp(PulseboardApp(auth: auth));
+  runApp(PulseboardApp(auth: auth, catalog: catalog));
 }
 
 class PulseboardApp extends StatelessWidget {
-  const PulseboardApp({super.key, required this.auth});
+  const PulseboardApp({
+    super.key,
+    required this.auth,
+    required this.catalog,
+  });
 
-  final AuthRepository auth;
+  final AuthRepositoryContract auth;
+  final CatalogRepositoryContract catalog;
 
   @override
   Widget build(BuildContext context) {
@@ -32,17 +38,15 @@ class PulseboardApp extends StatelessWidget {
       title: 'Pulseboard',
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xffe86a33),
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xffe86a33)),
         scaffoldBackgroundColor: const Color(0xfff7f4ef),
         inputDecorationTheme: const InputDecorationTheme(
           border: OutlineInputBorder(),
         ),
       ),
       home: auth.isAuthenticated
-          ? HomePage(auth: auth)
-          : LoginPage(auth: auth),
+          ? HomePage(auth: auth, catalog: catalog)
+          : LoginPage(auth: auth, catalog: catalog),
     );
   }
 }

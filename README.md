@@ -1,277 +1,183 @@
 # Pulseboard — Projet de certification Flutter
 
-Application Flutter complète construite pour démontrer les compétences demandées dans le projet de certification :
+Application Flutter complète démontrant les exigences du projet de certification :
 
-- authentification login / register / logout ;
-- JWT avec access token + refresh token ;
-- appels REST avec Dio ;
-- injection automatique du JWT via intercepteur Dio ;
-- refresh automatique après HTTP 401 ;
-- 3 écrans de données provenant d'une API REST ;
-- cache local avec Hive ;
-- fonctionnement hors connexion grâce aux données mises en cache ;
-- messages d'erreur lisibles pour l'utilisateur ;
-- Clean Architecture `data / domain / presentation` ;
-- Repository Pattern ;
-- 5 tests unitaires de la couche repository/auth.
+- authentification **login / register / logout** ;
+- **JWT access token + refresh token** ;
+- appels REST avec **Dio** ;
+- **intercepteur Dio** qui injecte automatiquement `Authorization: Bearer ...` ;
+- **refresh automatique** après un `401`, avec rotation du refresh token ;
+- **3 écrans REST distincts** : Utilisateurs, Articles, Tâches ;
+- cache local avec **Hive** ;
+- fonctionnement **hors connexion** avec lecture du cache ;
+- indication visuelle `Hors ligne` quand les données proviennent du cache ;
+- messages d'erreur utilisateur + bouton Réessayer ;
+- architecture **Clean Architecture `data / domain / presentation`** ;
+- **Repository Pattern** par interfaces dans `domain` ;
+- **8 tests unitaires** ciblés repository + authentification + intercepteur.
 
-## 0. Vérification locale
+## API publique utilisée
 
-Après installation des dépendances, exécuter `flutter analyze` et `flutter test`.
-Le client API déclare explicitement son `SessionStore` afin que l’injection du token, le refresh JWT et la persistance de session compilent correctement.
+Le projet utilise **Playground API**, un backend REST public avec authentification JWT, inscription, refresh token et ressources REST persistées dans une session sandbox. La documentation officielle décrit notamment `/api/v1/auth/login`, `/api/v1/auth/register`, `/api/v1/auth/refresh`, `/api/v1/auth/me`, ainsi que les collections `users`, `posts` et `todos`.
 
-## 1. API utilisée
+Base URL :
 
-L'application utilise **DummyJSON** :
+```text
+https://playground.nileslabs.com/api/v1
+```
 
-- Base URL : `https://dummyjson.com`
-- Authentification : `/auth/login`
-- Refresh JWT : `/auth/refresh`
-- Inscription simulée : `/users/add`
-- Produits : `/products?limit=12`
-- Articles : `/posts?limit=12`
-- Utilisateurs : `/users?limit=12`
+Endpoints utilisés :
 
-Documentation officielle : https://dummyjson.com/docs
+```text
+POST /auth/login
+POST /auth/register
+POST /auth/refresh
+GET  /auth/me
+GET  /users?limit=12
+GET  /posts?limit=12
+GET  /todos?limit=12
+```
+
+Documentation :
+https://playground.nileslabs.com/docs
 
 ### Compte de démonstration
 
 ```text
-username: emilys
-password: emilyspass
+username: admin
+password: Password@123
 ```
 
-DummyJSON fournit un JWT et un refresh token à la connexion.
+## Authentification JWT
 
-> Important : DummyJSON documente `/users/add` comme une opération simulée : l'utilisateur retourné est créé dans la réponse mais n'est pas persisté côté serveur. L'écran Register est donc volontairement documenté comme une inscription de démonstration. Pour une inscription réellement persistante, le même `AuthRepository` peut être branché sur un backend réel sans modifier la couche presentation.
+Le flux Login/Register reçoit :
 
-## 2. Architecture
+```json
+{
+  "access_token": "...",
+  "refresh_token": "...",
+  "user": { "name": "..." }
+}
+```
 
-Le projet suit une séparation Clean Architecture simplifiée :
+Les deux tokens et le nom utilisateur sont stockés dans Hive.
+
+L'intercepteur `AuthInterceptor` :
+
+1. lit `accessToken` depuis `SessionStore` ;
+2. ajoute `Authorization: Bearer <token>` à chaque requête ;
+3. intercepte une réponse `401` ;
+4. envoie `refresh_token` à `/auth/refresh` ;
+5. enregistre les nouveaux tokens ;
+6. rejoue la requête initiale une seule fois ;
+7. supprime la session si le refresh échoue.
+
+Après Login ou Register, `/auth/me` est également appelé pour vérifier que le JWT permet bien d'accéder à une ressource protégée.
+
+## Register réellement intégré
+
+Contrairement à la version précédente basée sur DummyJSON, l'écran Register utilise ici `/auth/register` et reçoit immédiatement les deux JWT. L'utilisateur est donc connecté automatiquement après une inscription réussie.
+
+## Logout
+
+L'API publique ne nécessite pas de révocation serveur pour cet exercice. Le logout de l'application supprime immédiatement `access_token`, `refresh_token` et le nom utilisateur de Hive, ce qui invalide la session côté application.
+
+## Architecture
 
 ```text
 lib/
 ├── core/
 │   └── app_failure.dart
-│
 ├── data/
 │   ├── api_client.dart
+│   ├── dtos.dart
 │   ├── local_store.dart
 │   └── repositories.dart
-│
 ├── domain/
 │   ├── models.dart
 │   └── repositories.dart
-│
 ├── presentation/
 │   └── pages.dart
-│
 └── main.dart
 ```
 
 ### Domain
 
-Le dossier `domain` ne dépend pas de Dio, Hive ou Flutter.
+Le `domain` ne dépend ni de Dio, ni de Hive, ni de Flutter.
 
-- `models.dart` contient les modèles métier.
-- `repositories.dart` contient les contrats des repositories.
+- `models.dart` contient les modèles métier purs.
+- `repositories.dart` contient les contrats.
+- `DataResult` indique si les données viennent du réseau ou du cache.
 
 ### Data
 
-Le dossier `data` contient les détails techniques :
-
-- `ApiClient` encapsule Dio ;
-- `LocalStore` encapsule Hive ;
-- `AuthRepository` gère login/register/logout ;
-- `CatalogRepository` gère les trois sources REST et le cache.
+- `dtos.dart` transforme les réponses JSON en modèles du domaine.
+- `api_client.dart` encapsule Dio et l'intercepteur JWT.
+- `local_store.dart` encapsule Hive.
+- `repositories.dart` contient les implémentations concrètes des repositories.
 
 ### Presentation
 
-`pages.dart` contient les écrans Flutter :
+Les écrans dépendent uniquement des interfaces `domain/repositories.dart`.
 
-1. Produits
-2. Articles
-3. Équipe
-4. Login/Register
+## Cache et mode hors connexion
 
-Les écrans ne font jamais directement d'appel Dio ou Hive : ils passent par les repositories.
-
-## 3. Authentification JWT
-
-Le flux de connexion est :
+Chaque repository suit le même principe :
 
 ```text
-LoginPage
-   ↓
-AuthRepository.login()
-   ↓
-ApiClient / Dio
-   ↓
-POST /auth/login
-   ↓
-accessToken + refreshToken
-   ↓
-Hive
-```
-
-Pour les appels suivants, l'intercepteur Dio lit le token depuis `SessionStore` et ajoute automatiquement :
-
-```http
-Authorization: Bearer <accessToken>
-```
-
-### Refresh automatique
-
-Si une requête reçoit `401` :
-
-```text
-API → 401
- ↓
-Dio Interceptor
- ↓
-POST /auth/refresh
- ↓
-nouveau accessToken
- ↓
-sauvegarde Hive
- ↓
-rejoue la requête initiale
-```
-
-Si le refresh échoue, la session locale est supprimée et l'utilisateur doit se reconnecter.
-
-## 4. Persistance et mode hors connexion
-
-Hive contient deux boxes :
-
-```text
-auth
-cache
-```
-
-La box `auth` contient :
-
-- `accessToken`
-- `refreshToken`
-- `userName`
-
-La box `cache` contient les réponses REST sérialisées :
-
-- `products`
-- `articles`
-- `people`
-
-Lorsqu'une requête REST réussit, sa réponse est enregistrée dans Hive.
-
-Si le réseau échoue, le repository tente automatiquement de lire la donnée correspondante dans le cache.
-
-```text
-                 ┌── Réseau OK ──→ API ──→ cache Hive ──→ écran
+                 ┌── Réseau OK ──→ REST ──→ Hive ──→ écran
 Repository ──────┤
-                 └── Réseau KO ──→ cache Hive ──────────→ écran
+                 └── Réseau KO ──→ Hive ──────────→ écran
                                       │
-                                      └── cache absent → message utilisateur
+                                      └── absence cache → AppFailure
 ```
 
-## 5. Gestion des erreurs
-
-Les erreurs techniques sont converties en `AppFailure` avant d'atteindre l'interface.
-
-Exemples :
-
-- connexion indisponible ;
-- timeout ;
-- réponse API invalide ;
-- cache local corrompu ;
-- aucune donnée disponible hors connexion ;
-- erreur d'authentification.
-
-L'interface affiche le message utilisateur et propose un bouton **Réessayer** sur les écrans de données.
-
-## 6. Tests
-
-Les tests sont dans :
+Les clés Hive utilisées sont :
 
 ```text
-test/repository_test.dart
+users
+posts
+todos
 ```
 
-Ils couvrent notamment :
+Quand un écran utilise le cache, l'interface affiche automatiquement :
 
-1. récupération des produits depuis l'API + mise en cache ;
-2. lecture des articles depuis le cache lorsque le réseau échoue ;
-3. erreur explicite lorsqu'il n'existe aucun cache hors connexion ;
-4. stockage du JWT et du refresh token après login ;
-5. suppression de la session lors du logout.
-
-L'objectif demandé était d'avoir au moins 3 tests unitaires de repository ; le projet en contient 5.
-
-## 7. Installation
-
-Prérequis :
-
-- Flutter stable ;
-- Dart compatible avec `sdk >=3.10.0 <4.0.0`.
-
-Installer les dépendances :
-
-```bash
-flutter pub get
+```text
+Hors ligne
 ```
 
-Lancer les tests :
+## Gestion des erreurs
 
-```bash
-flutter test
+Les erreurs réseau et les réponses invalides sont converties en `AppFailure` avant l'interface.
+
+L'utilisateur reçoit un message clair, par exemple :
+
+```text
+Connexion réseau indisponible. Vérifie Internet et réessaie.
 ```
 
-Analyser le projet :
+ou, en absence de cache :
 
-```bash
-flutter analyze
+```text
+Hors connexion : aucune donnée en cache pour cet écran.
 ```
 
-Lancer l'application :
+## Tests
 
-```bash
-flutter run
-```
+`test/repository_test.dart` contient 8 tests :
 
-## 8. Vérification du mode hors connexion
+1. récupération REST des utilisateurs + cache ;
+2. lecture du cache hors ligne ;
+3. erreur sans cache ;
+4. stockage des JWT après Login ;
+5. inscription et ouverture automatique d'une session JWT ;
+6. logout et suppression de session ;
+7. injection `Bearer` par l'intercepteur ;
+8. refresh token après `401` et rejeu de la requête.
 
-Pour vérifier le cache :
+## Installation
 
-1. lancer l'application avec Internet ;
-2. se connecter avec `emilys / emilyspass` ;
-3. ouvrir les trois onglets ;
-4. laisser les données se charger ;
-5. couper Internet ;
-6. revenir sur les écrans ;
-7. les données déjà téléchargées restent disponibles depuis Hive.
-
-Pour vérifier le cas sans cache, supprimer les données de l'application puis couper Internet : un message d'erreur utilisateur sera affiché.
-
-## 9. Correspondance avec le cahier des charges
-
-| Exigence | Implémentation |
-|---|---|
-| Login | `AuthRepository.login()` + `/auth/login` |
-| Register | `AuthRepository.register()` + `/users/add` |
-| Logout | `AuthRepository.logout()` |
-| JWT | access token stocké dans Hive |
-| Intercepteur token | `ApiClient` / `InterceptorsWrapper.onRequest` |
-| Refresh token | `InterceptorsWrapper.onError` + `/auth/refresh` |
-| 3 écrans API | Produits, Articles, Équipe |
-| REST | Dio |
-| Cache local | Hive |
-| Hors connexion | fallback automatique vers Hive |
-| Gestion erreurs | `AppFailure` + messages UI |
-| Architecture | `data / domain / presentation` |
-| Repository Pattern | contrats dans `domain/repositories.dart` |
-| Tests repository | 5 tests dans `test/repository_test.dart` |
-| README | ce document |
-
-## 10. Commandes de validation avant livraison
+Prérequis : Flutter stable + Dart compatible avec `sdk >=3.10.0 <4.0.0`.
 
 ```bash
 flutter clean
@@ -281,4 +187,32 @@ flutter test
 flutter run
 ```
 
-Le dépôt peut ensuite être publié sur GitHub avec le contenu du dossier du projet.
+## Vérification du hors ligne
+
+1. lancer l'application avec Internet ;
+2. se connecter ;
+3. ouvrir successivement les trois onglets ;
+4. attendre le chargement des données ;
+5. couper Internet ;
+6. tirer la liste vers le bas pour actualiser ;
+7. les données précédemment téléchargées sont affichées depuis Hive avec le badge `Hors ligne`.
+
+## Correspondance avec le barème
+
+| Exigence | Implémentation |
+|---|---|
+| Login | `POST /auth/login` + `AuthRepository.login()` |
+| Register | `POST /auth/register` + ouverture automatique de session |
+| Logout | suppression de la session locale |
+| JWT | access + refresh token |
+| 3 écrans REST | Utilisateurs, Articles, Tâches |
+| Dio | `ApiClient` |
+| Intercepteur | `AuthInterceptor.onRequest` |
+| Refresh token | `AuthInterceptor.onError` + `/auth/refresh` |
+| Cache local | Hive |
+| Hors ligne | fallback repository vers Hive |
+| Gestion erreurs | `AppFailure` + messages UI |
+| Clean Architecture | `data / domain / presentation` |
+| Repository Pattern | interfaces dans `domain/repositories.dart` |
+| Tests repository | 8 tests |
+| README | documentation complète |

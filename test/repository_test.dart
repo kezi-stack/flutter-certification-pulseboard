@@ -7,6 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 class MockDio extends Mock implements Dio {}
+class MockRequestHandler extends Mock implements RequestInterceptorHandler {}
+class MockErrorHandler extends Mock implements ErrorInterceptorHandler {}
+class FakeResponse extends Fake implements Response<dynamic> {}
 
 class FakeStore implements SessionStore {
   String? storedToken;
@@ -16,10 +19,8 @@ class FakeStore implements SessionStore {
 
   @override
   String? get token => storedToken;
-
   @override
   String? get refreshToken => storedRefresh;
-
   @override
   String? get userName => storedUser;
 
@@ -42,10 +43,7 @@ class FakeStore implements SessionStore {
   }
 
   @override
-  Future<void> cache(String key, String value) async {
-    values[key] = value;
-  }
-
+  Future<void> cache(String key, String value) async => values[key] = value;
   @override
   String? readCache(String key) => values[key];
 }
@@ -53,14 +51,12 @@ class FakeStore implements SessionStore {
 Response<Map<String, dynamic>> responseFor(
   String path,
   Map<String, dynamic> data,
-) {
-  return Response(
-    requestOptions: RequestOptions(path: path),
-    data: data,
-  );
-}
+) => Response(requestOptions: RequestOptions(path: path), data: data);
 
 void main() {
+  setUpAll(() {
+    registerFallbackValue(FakeResponse());
+  });
   late MockDio dio;
   late FakeStore store;
   late CatalogRepository repository;
@@ -72,35 +68,32 @@ void main() {
     repository = CatalogRepository(ApiClient(store, client: dio), store);
   });
 
-  test('repository fetches products from REST and caches them', () async {
-    when(() => dio.get('/products?limit=12')).thenAnswer(
-      (_) async => responseFor(
-        '/products?limit=12',
-        {
-          'products': [
-            {
-              'id': 1,
-              'title': 'Desk',
-              'price': 49,
-              'rating': 4.5,
-              'thumbnail': 'image',
-            },
-          ],
-        },
-      ),
+  test('repository fetches users from REST and caches them', () async {
+    when(() => dio.get('/users?limit=12')).thenAnswer(
+      (_) async => responseFor('/users?limit=12', {
+        'data': [
+          {
+            'id': 1,
+            'name': 'Jane Doe',
+            'username': 'jane',
+            'email': 'jane@example.com',
+          },
+        ],
+      }),
     );
 
-    final products = await repository.products();
+    final result = await repository.users();
 
-    expect(products.single.title, 'Desk');
-    expect(store.readCache('products'), contains('Desk'));
-    verify(() => dio.get('/products?limit=12')).called(1);
+    expect(result.fromCache, isFalse);
+    expect(result.data.single.name, 'Jane Doe');
+    expect(store.readCache('users'), contains('Jane Doe'));
+    verify(() => dio.get('/users?limit=12')).called(1);
   });
 
-  test('repository reads cached articles when network fails', () async {
+  test('repository reads cached posts when network fails', () async {
     await store.cache(
-      'articles',
-      '{"posts":[{"id":2,"title":"Release","body":"Notes","tags":["news"],"views":120}]}',
+      'posts',
+      '[{"id":2,"user_id":1,"title":"Release","body":"Notes"}]',
     );
     when(() => dio.get('/posts?limit=12')).thenThrow(
       DioException(
@@ -109,69 +102,144 @@ void main() {
       ),
     );
 
-    final articles = await repository.articles();
+    final result = await repository.posts();
 
-    expect(articles.single.title, 'Release');
-    expect(articles.single.views, 120);
+    expect(result.fromCache, isTrue);
+    expect(result.data.single.title, 'Release');
   });
 
   test('repository returns a clear offline failure without cache', () async {
-    when(() => dio.get('/users?limit=12')).thenThrow(
+    when(() => dio.get('/todos?limit=12')).thenThrow(
       DioException(
-        requestOptions: RequestOptions(path: '/users?limit=12'),
+        requestOptions: RequestOptions(path: '/todos?limit=12'),
         type: DioExceptionType.connectionError,
       ),
     );
 
     expect(
-      repository.people(),
-      throwsA(
-        isA<AppFailure>().having(
-          (failure) => failure.message,
-          'message',
-          contains('Hors connexion'),
-        ),
-      ),
+      repository.todos(),
+      throwsA(isA<AppFailure>().having(
+        (failure) => failure.message,
+        'message',
+        contains('Hors connexion'),
+      )),
     );
   });
 
-  test('auth repository stores JWT and refresh token after login', () async {
+  test('auth repository stores access and refresh JWT after login', () async {
     final auth = AuthRepository(ApiClient(store, client: dio), store);
-
-    when(() => dio.post(
-          '/auth/login',
-          data: any(named: 'data'),
-        )).thenAnswer(
-      (_) async => responseFor(
-        '/auth/login',
-        {
-          'accessToken': 'access-token',
-          'refreshToken': 'refresh-token',
-          'firstName': 'Emily',
-          'lastName': 'Johnson',
-        },
-      ),
+    when(() => dio.post('/auth/login', data: any(named: 'data'))).thenAnswer(
+      (_) async => responseFor('/auth/login', {
+        'access_token': 'access-token',
+        'refresh_token': 'refresh-token',
+        'user': {'name': 'Admin', 'username': 'admin'},
+      }),
+    );
+    when(() => dio.get('/auth/me')).thenAnswer(
+      (_) async => responseFor('/auth/me', {'id': 1, 'name': 'Admin'}),
     );
 
-    await auth.login('emilys', 'emilyspass');
+    await auth.login('admin', 'Password@123');
 
     expect(auth.isAuthenticated, isTrue);
     expect(store.token, 'access-token');
     expect(store.refreshToken, 'refresh-token');
-    expect(auth.currentUser, 'Emily Johnson');
+    expect(auth.currentUser, 'Admin');
   });
 
-  test('auth repository logout clears the local session', () async {
+  test('auth repository register creates a JWT session', () async {
+    final auth = AuthRepository(ApiClient(store, client: dio), store);
+    when(() => dio.post('/auth/register', data: any(named: 'data'))).thenAnswer(
+      (_) async => responseFor('/auth/register', {
+        'access_token': 'registered-access',
+        'refresh_token': 'registered-refresh',
+        'user': {'name': 'Alice', 'username': 'alice'},
+      }),
+    );
+    when(() => dio.get('/auth/me')).thenAnswer(
+      (_) async => responseFor('/auth/me', {'id': 'local-1', 'name': 'Alice'}),
+    );
+
+    await auth.register(
+      name: 'Alice',
+      username: 'alice',
+      email: 'alice@example.com',
+      password: 'Password@123',
+    );
+
+    expect(auth.isAuthenticated, isTrue);
+    expect(store.token, 'registered-access');
+    expect(store.refreshToken, 'registered-refresh');
+  });
+
+  test('logout clears the local session', () async {
     final auth = AuthRepository(ApiClient(store, client: dio), store);
     await store.saveSession(
       token: 'access',
       refreshToken: 'refresh',
-      userName: 'Emily Johnson',
+      userName: 'Admin',
     );
 
     await auth.logout();
 
     expect(auth.isAuthenticated, isFalse);
     expect(auth.currentUser, isNull);
+  });
+
+  test('interceptor injects Bearer access token', () async {
+    final requestHandler = MockRequestHandler();
+    store.storedToken = 'abc123';
+    final client = MockDio();
+    when(() => client.interceptors).thenReturn(Interceptors());
+    final interceptor = AuthInterceptor(store: store, dio: client);
+    final options = RequestOptions(path: '/posts');
+
+    interceptor.onRequest(options, requestHandler);
+
+    expect(options.headers['Authorization'], 'Bearer abc123');
+    verify(() => requestHandler.next(options)).called(1);
+  });
+
+  test('interceptor refreshes tokens after 401 and retries request', () async {
+    final errorHandler = MockErrorHandler();
+    store.storedToken = 'old-access';
+    store.storedRefresh = 'old-refresh';
+    store.storedUser = 'Admin';
+
+    when(() => dio.post('/auth/refresh', data: any(named: 'data'))).thenAnswer(
+      (_) async => responseFor('/auth/refresh', {
+        'access_token': 'new-access',
+        'refresh_token': 'new-refresh',
+      }),
+    );
+    when(() => dio.request<dynamic>(
+          '/posts',
+          data: any(named: 'data'),
+          queryParameters: any(named: 'queryParameters'),
+          options: any(named: 'options'),
+          cancelToken: any(named: 'cancelToken'),
+          onReceiveProgress: any(named: 'onReceiveProgress'),
+          onSendProgress: any(named: 'onSendProgress'),
+        )).thenAnswer(
+      (_) async => Response(
+        requestOptions: RequestOptions(path: '/posts'),
+        data: {'data': []},
+      ),
+    );
+
+    final interceptor = AuthInterceptor(store: store, dio: dio);
+    final error = DioException(
+      requestOptions: RequestOptions(path: '/posts', method: 'GET'),
+      response: Response(
+        requestOptions: RequestOptions(path: '/posts'),
+        statusCode: 401,
+      ),
+    );
+
+    await interceptor.onError(error, errorHandler);
+
+    expect(store.token, 'new-access');
+    expect(store.refreshToken, 'new-refresh');
+    verify(() => errorHandler.resolve(any())).called(1);
   });
 }

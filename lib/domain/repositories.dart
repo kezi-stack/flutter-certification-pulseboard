@@ -7,10 +7,9 @@ abstract interface class AuthRepositoryContract {
   Future<void> login(String username, String password);
 
   Future<void> register({
-    required String firstName,
-    required String lastName,
-    required String email,
+    required String name,
     required String username,
+    required String email,
     required String password,
   });
 
@@ -18,7 +17,7 @@ abstract interface class AuthRepositoryContract {
 }
 
 abstract interface class CatalogRepositoryContract {
-  Future<List<Product>> products();
-  Future<List<Article>> articles();
-  Future<List<Person>> people();
+  Future<DataResult<List<User>>> users();
+  Future<DataResult<List<Post>>> posts();
+  Future<DataResult<List<Todo>>> todos();
 }

@@ -6,6 +6,7 @@ import '../core/app_failure.dart';
 import '../domain/models.dart';
 import '../domain/repositories.dart';
 import 'api_client.dart';
+import 'dtos.dart';
 import 'local_store.dart';
 
 class AuthRepository implements AuthRepositoryContract {
@@ -15,7 +16,7 @@ class AuthRepository implements AuthRepositoryContract {
   final SessionStore store;
 
   @override
-  bool get isAuthenticated => store.token != null && store.token!.isNotEmpty;
+  bool get isAuthenticated => store.token?.isNotEmpty == true;
 
   @override
   String? get currentUser => store.userName;
@@ -28,24 +29,13 @@ class AuthRepository implements AuthRepositoryContract {
         data: <String, dynamic>{
           'username': username.trim(),
           'password': password,
-          'expiresInMins': 30,
+          'token_ttl': 900,
         },
       );
-
-      final accessToken = response.data['accessToken'] as String?;
-      if (accessToken == null || accessToken.isEmpty) {
-        throw const AppFailure('Réponse d’authentification invalide.');
-      }
-
-      await store.saveSession(
-        token: accessToken,
-        refreshToken: response.data['refreshToken'] as String? ?? '',
-        userName:
-            '${response.data['firstName'] ?? ''} ${response.data['lastName'] ?? ''}'
-                .trim(),
-      );
+      await _saveAuthResponse(response.data);
+      await _verifyAuthenticatedSession();
     } on DioException catch (error) {
-      throw AppFailure(_networkMessage(error, 'Connexion impossible.'));
+      throw AppFailure(_messageFrom(error, 'Connexion impossible.'));
     } on AppFailure {
       rethrow;
     } on Object {
@@ -55,40 +45,79 @@ class AuthRepository implements AuthRepositoryContract {
 
   @override
   Future<void> register({
-    required String firstName,
-    required String lastName,
-    required String email,
+    required String name,
     required String username,
+    required String email,
     required String password,
   }) async {
     try {
-      await api.dio.post(
-        '/users/add',
+      final response = await api.dio.post(
+        '/auth/register',
         data: <String, dynamic>{
-          'firstName': firstName.trim(),
-          'lastName': lastName.trim(),
-          'email': email.trim(),
+          'name': name.trim(),
           'username': username.trim(),
+          'email': email.trim(),
           'password': password,
+          'token_ttl': 900,
         },
       );
+      await _saveAuthResponse(response.data);
+      await _verifyAuthenticatedSession();
     } on DioException catch (error) {
-      throw AppFailure(_networkMessage(error, 'Inscription impossible.'));
+      throw AppFailure(_messageFrom(error, 'Inscription impossible.'));
+    } on AppFailure {
+      rethrow;
+    } on Object {
+      throw const AppFailure('Réponse d’inscription invalide.');
+    }
+  }
+
+  Future<void> _saveAuthResponse(dynamic data) async {
+    if (data is! Map) {
+      throw const AppFailure('Réponse d’authentification invalide.');
+    }
+
+    final accessToken = data['access_token'] as String?;
+    final refreshToken = data['refresh_token'] as String?;
+    final user = data['user'];
+
+    if (accessToken == null ||
+        accessToken.isEmpty ||
+        refreshToken == null ||
+        refreshToken.isEmpty ||
+        user is! Map) {
+      throw const AppFailure('Le serveur n’a pas retourné les tokens JWT attendus.');
+    }
+
+    final name = user['name'] as String? ?? user['username'] as String? ?? 'Utilisateur';
+    await store.saveSession(
+      token: accessToken,
+      refreshToken: refreshToken,
+      userName: name,
+    );
+  }
+
+  Future<void> _verifyAuthenticatedSession() async {
+    try {
+      await api.dio.get('/auth/me');
+    } on DioException catch (error) {
+      await store.clearSession();
+      throw AppFailure(_messageFrom(error, 'La session JWT n’a pas pu être vérifiée.'));
     }
   }
 
   @override
   Future<void> logout() => store.clearSession();
 
-  String _networkMessage(DioException error, String fallback) {
+  String _messageFrom(DioException error, String fallback) {
     final data = error.response?.data;
     if (data is Map && data['message'] is String) {
       return data['message'] as String;
     }
-    if (error.type == DioExceptionType.connectionTimeout ||
+    if (error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.receiveTimeout ||
-        error.type == DioExceptionType.sendTimeout ||
-        error.type == DioExceptionType.connectionError) {
+        error.type == DioExceptionType.sendTimeout) {
       return 'Connexion réseau indisponible. Vérifie Internet et réessaie.';
     }
     return fallback;
@@ -102,66 +131,57 @@ class CatalogRepository implements CatalogRepositoryContract {
   final SessionStore store;
 
   @override
-  Future<List<Product>> products() => _fetchList<Product>(
-        cacheKey: 'products',
-        path: '/products?limit=12',
-        listKey: 'products',
-        decoder: Product.fromJson,
-      );
-
-  @override
-  Future<List<Article>> articles() => _fetchList<Article>(
-        cacheKey: 'articles',
-        path: '/posts?limit=12',
-        listKey: 'posts',
-        decoder: Article.fromJson,
-      );
-
-  @override
-  Future<List<Person>> people() => _fetchList<Person>(
-        cacheKey: 'people',
+  Future<DataResult<List<User>>> users() => _fetch<User>(
+        cacheKey: 'users',
         path: '/users?limit=12',
-        listKey: 'users',
-        decoder: Person.fromJson,
+        decoder: (json) => UserDto.fromJson(json).toDomain(),
       );
 
-  Future<List<T>> _fetchList<T>({
+  @override
+  Future<DataResult<List<Post>>> posts() => _fetch<Post>(
+        cacheKey: 'posts',
+        path: '/posts?limit=12',
+        decoder: (json) => PostDto.fromJson(json).toDomain(),
+      );
+
+  @override
+  Future<DataResult<List<Todo>>> todos() => _fetch<Todo>(
+        cacheKey: 'todos',
+        path: '/todos?limit=12',
+        decoder: (json) => TodoDto.fromJson(json).toDomain(),
+      );
+
+  Future<DataResult<List<T>>> _fetch<T>({
     required String cacheKey,
     required String path,
-    required String listKey,
     required T Function(Map<String, dynamic>) decoder,
   }) async {
     try {
       final response = await api.dio.get(path);
       final raw = Map<String, dynamic>.from(response.data as Map);
-      final list = raw[listKey];
+      final list = raw['data'];
 
       if (list is! List) {
-        throw const FormatException('Liste absente de la réponse.');
+        throw const FormatException('Champ data absent.');
       }
 
-      await store.cache(cacheKey, jsonEncode(raw));
-      return list
+      final items = list
           .map((item) => decoder(Map<String, dynamic>.from(item as Map)))
           .toList();
+      await store.cache(cacheKey, jsonEncode(list));
+      return DataResult(data: items, fromCache: false);
     } on DioException catch (error) {
       final cached = store.readCache(cacheKey);
       if (cached != null) {
-        return _decodeCached<T>(cached, listKey, decoder);
+        return DataResult(data: _decodeCached(cached, decoder), fromCache: true);
       }
-      throw AppFailure(
-        error.type == DioExceptionType.connectionError ||
-                error.type == DioExceptionType.connectionTimeout ||
-                error.type == DioExceptionType.receiveTimeout
-            ? 'Hors connexion : aucune donnée en cache pour cet écran.'
-            : 'Impossible de charger les données. Réessaie dans un instant.',
-      );
+      throw AppFailure(_offlineOrNetworkMessage(error));
     } on AppFailure {
       rethrow;
     } on Object {
       final cached = store.readCache(cacheKey);
       if (cached != null) {
-        return _decodeCached<T>(cached, listKey, decoder);
+        return DataResult(data: _decodeCached(cached, decoder), fromCache: true);
       }
       throw const AppFailure('Les données reçues sont invalides.');
     }
@@ -169,12 +189,10 @@ class CatalogRepository implements CatalogRepositoryContract {
 
   List<T> _decodeCached<T>(
     String cached,
-    String listKey,
     T Function(Map<String, dynamic>) decoder,
   ) {
     try {
-      final raw = Map<String, dynamic>.from(jsonDecode(cached) as Map);
-      final list = raw[listKey];
+      final list = jsonDecode(cached);
       if (list is! List) {
         throw const FormatException();
       }
@@ -184,5 +202,15 @@ class CatalogRepository implements CatalogRepositoryContract {
     } on Object {
       throw const AppFailure('Le cache local est corrompu. Recharge en ligne.');
     }
+  }
+
+  String _offlineOrNetworkMessage(DioException error) {
+    if (error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.sendTimeout) {
+      return 'Hors connexion : aucune donnée en cache pour cet écran.';
+    }
+    return 'Impossible de charger les données. Réessaie dans un instant.';
   }
 }
