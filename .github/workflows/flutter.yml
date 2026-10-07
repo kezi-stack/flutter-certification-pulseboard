@@ -1,0 +1,84 @@
+name: Flutter quality and Android demo
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze-and-test:
+    name: Analyze and unit/widget tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --fatal-infos --fatal-warnings
+
+      - name: Unit and widget tests
+        run: flutter test --coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-coverage
+          path: coverage/lcov.info
+          if-no-files-found: ignore
+
+  android-demo:
+    name: Integration tests, APK and screenshot
+    needs: analyze-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Start Android emulator and verify demo build
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          disable-animations: true
+          script: |
+            flutter test integration_test
+            flutter build apk --release
+            mkdir -p artifacts
+            adb install -r build/app/outputs/flutter-apk/app-release.apk
+            adb shell am force-stop com.example.certificat
+            adb shell am start -n com.example.certificat/.MainActivity
+            sleep 8
+            adb exec-out screencap -p > artifacts/certification-login.png
+
+      - name: Upload Android demo and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulseboard-demo-android
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            artifacts/certification-login.png
+          if-no-files-found: warn

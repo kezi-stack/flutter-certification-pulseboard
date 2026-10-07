@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import 'core/app_strings.dart';
 import 'data/api_client.dart';
 import 'data/local_store.dart';
 import 'data/repositories.dart';
 import 'domain/repositories.dart';
-import 'presentation/pages.dart';
+import 'presentation/certification_pages.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +23,7 @@ Future<void> main() async {
   runApp(PulseboardApp(auth: auth, catalog: catalog));
 }
 
-class PulseboardApp extends StatelessWidget {
+class PulseboardApp extends StatefulWidget {
   const PulseboardApp({
     super.key,
     required this.auth,
@@ -32,10 +34,24 @@ class PulseboardApp extends StatelessWidget {
   final CatalogRepositoryContract catalog;
 
   @override
+  State<PulseboardApp> createState() => _PulseboardAppState();
+}
+
+class _PulseboardAppState extends State<PulseboardApp> {
+  Locale _locale = const Locale('fr');
+
+  void _changeLocale(Locale locale) {
+    setState(() => _locale = locale);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Pulseboard',
+      locale: _locale,
+      supportedLocales: const [Locale('fr'), Locale('en')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xffe86a33)),
@@ -44,9 +60,17 @@ class PulseboardApp extends StatelessWidget {
           border: OutlineInputBorder(),
         ),
       ),
-      home: auth.isAuthenticated
-          ? HomePage(auth: auth, catalog: catalog)
-          : LoginPage(auth: auth, catalog: catalog),
+      home: widget.auth.isAuthenticated
+          ? HomePage(
+              auth: widget.auth,
+              catalog: widget.catalog,
+              onLocaleChanged: _changeLocale,
+            )
+          : LoginPage(
+              auth: widget.auth,
+              catalog: widget.catalog,
+              onLocaleChanged: _changeLocale,
+            ),
     );
   }
 }
