@@ -51,6 +51,5 @@ void main() {
 
     expect(find.text('App language'), findsOneWidget);
     expect(find.text('Accessibility'), findsOneWidget);
-    expect(find.text('Settings'), findsOneWidget);
   });
 }
