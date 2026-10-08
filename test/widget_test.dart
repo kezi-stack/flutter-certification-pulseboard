@@ -60,11 +60,20 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(HomePage), findsOneWidget);
-    expect(find.text('Vue d’ensemble'), findsWidgets);
-    expect(find.text('Utilisateurs'), findsOneWidget);
-    expect(find.text('Articles'), findsOneWidget);
-    expect(find.text('Tâches'), findsOneWidget);
-    expect(find.text('Réglages'), findsOneWidget);
+    for (final label in [
+      'Vue d’ensemble',
+      'Utilisateurs',
+      'Articles',
+      'Tâches',
+      'Réglages',
+    ]) {
+      expect(
+        find.byWidgetPredicate(
+          (widget) => widget is NavigationDestination && widget.label == label,
+        ),
+        findsOneWidget,
+      );
+    }
   });
 
   testWidgets('settings language selector localizes the production notes',
@@ -80,6 +89,12 @@ void main() {
 
     expect(find.text('App language'), findsOneWidget);
     expect(find.text('Built for production'), findsOneWidget);
-    expect(find.text('Settings'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is NavigationDestination && widget.label == 'Settings',
+      ),
+      findsOneWidget,
+    );
   });
 }
