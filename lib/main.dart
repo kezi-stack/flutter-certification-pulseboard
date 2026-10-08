@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
-import 'core/app_strings.dart';
 import 'data/api_client.dart';
 import 'data/local_store.dart';
 import 'data/repositories.dart';
