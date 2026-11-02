@@ -186,7 +186,7 @@ void main() {
     expect(auth.currentUser, isNull);
   });
 
-  test('interceptor injects Bearer access token', () async {
+  test('interceptor adds the stored token as a bearer credential', () async {
     final requestHandler = MockRequestHandler();
     store.storedToken = 'abc123';
     final client = MockDio();
@@ -212,6 +212,7 @@ void main() {
         'refresh_token': 'new-refresh',
       }),
     );
+    Options? retryOptions;
     when(() => dio.request<dynamic>(
           '/posts',
           data: any(named: 'data'),
@@ -221,10 +222,13 @@ void main() {
           onReceiveProgress: any(named: 'onReceiveProgress'),
           onSendProgress: any(named: 'onSendProgress'),
         )).thenAnswer(
-      (_) async => Response(
-        requestOptions: RequestOptions(path: '/posts'),
-        data: {'data': []},
-      ),
+      (invocation) async {
+        retryOptions = invocation.namedArguments[#options] as Options;
+        return Response(
+          requestOptions: RequestOptions(path: '/posts'),
+          data: {'data': []},
+        );
+      },
     );
 
     final interceptor = AuthInterceptor(store: store, dio: dio);
@@ -240,6 +244,7 @@ void main() {
 
     expect(store.token, 'new-access');
     expect(store.refreshToken, 'new-refresh');
+    expect(retryOptions?.headers?['Authorization'], 'Bearer new-access');
     verify(() => errorHandler.resolve(any())).called(1);
   });
 }
