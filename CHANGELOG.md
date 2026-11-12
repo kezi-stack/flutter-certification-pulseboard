@@ -2,6 +2,11 @@
 
 All notable project changes are documented here.
 
+## [Unreleased]
+
+- Added widget regression tests for screen-reader labels, invalid credentials, and sign-out.
+- Documented the current unit, widget, and integration test coverage in the README.
+
 ## [2.1.0] — 2026-10-07
 
 - Added a five-section Pulseboard workspace with overview metrics and task filters.

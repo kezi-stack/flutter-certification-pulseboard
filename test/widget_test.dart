@@ -28,6 +28,35 @@ void main() {
     expect(find.byTooltip('Changer de langue'), findsOneWidget);
   });
 
+  testWidgets('login controls expose accessible semantic labels',
+      (tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    final semantics = tester.ensureSemantics();
+
+    expect(find.bySemanticsLabel('Identifiant'), findsOneWidget);
+    expect(find.bySemanticsLabel('Mot de passe'), findsOneWidget);
+    expect(find.bySemanticsLabel('Se connecter'), findsOneWidget);
+
+    semantics.dispose();
+  });
+
+  testWidgets('empty credentials show validation errors without signing in',
+      (tester) async {
+    final auth = FakeAuthRepository();
+    await tester.pumpWidget(buildApp(auth: auth));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(0), '');
+    await tester.enterText(find.byType(TextFormField).at(1), '');
+    await tester.tap(find.text('Se connecter'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Utilisez au moins 3 caractères.'), findsOneWidget);
+    expect(find.text('Utilisez au moins 8 caractères.'), findsOneWidget);
+    expect(find.byType(LoginPage), findsOneWidget);
+    expect(auth.isAuthenticated, isFalse);
+  });
+
   testWidgets('login language control switches visible copy to English',
       (tester) async {
     await tester.pumpWidget(buildApp());
@@ -96,5 +125,17 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('sign-out returns to the login form', (tester) async {
+    final auth = FakeAuthRepository(authenticated: true);
+    await tester.pumpWidget(buildApp(auth: auth));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Se déconnecter'));
+    await tester.pumpAndSettle();
+
+    expect(auth.isAuthenticated, isFalse);
+    expect(find.byType(LoginPage), findsOneWidget);
   });
 }

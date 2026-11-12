@@ -87,13 +87,18 @@ When a content request fails, the repository returns the last cached response fr
 
 ## Automated checks
 
+The current suite contains 20 unit/repository tests, 8 widget tests, and 2 Android
+integration tests. GitHub Actions runs the unit and widget suites on every push
+and pull request, then runs the integration suite and builds the demo APK on
+Android API 35.
+
 | Check | Command | Coverage |
 |---|---|---|
-| Static analysis | `flutter analyze --fatal-infos --fatal-warnings` | All Dart sources |
-| Unit tests | `flutter test --coverage` | Form validation, dashboard statistics, task filtering, repositories, authentication, token refresh |
-| Widget tests | Included in `flutter test` | Login, localization, registration, navigation, Settings |
-| Integration tests | `flutter test integration_test` | Sign-in, section navigation, localization |
-| Android demo | `flutter build apk --release` | Release APK built in CI and uploaded with the login screenshot |
+| Static analysis | `flutter analyze --fatal-infos --fatal-warnings` | All Dart sources, with infos and warnings treated as failures |
+| Unit/repository tests | `flutter test --coverage` | 20 tests: validation, dashboard statistics, filtering, repositories, authentication, token refresh |
+| Widget tests | Included in `flutter test --coverage` | 8 tests: accessible labels, validation, localization, registration, navigation, sign-out |
+| Integration tests | `flutter test integration_test` | 2 Android flows: sign-in/navigation and locale changes |
+| Android demo | `flutter build apk --release` | Release APK built in CI and uploaded with a login screenshot |
 
 Tests use fake repositories at the presentation and integration layers. Repository tests use mocked Dio requests, so they do not depend on the public API being available.
 
