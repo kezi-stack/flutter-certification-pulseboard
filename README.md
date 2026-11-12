@@ -50,7 +50,7 @@ flowchart LR
 
 ## Requirements
 
-- Flutter stable and its bundled Dart SDK.
+- Flutter 3.44.8 and its bundled Dart SDK, matching the CI toolchain.
 - Android SDK and an emulator or Android device to run integration tests.
 
 ## Run locally

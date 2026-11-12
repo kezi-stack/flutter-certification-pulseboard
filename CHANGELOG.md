@@ -6,6 +6,7 @@ All notable project changes are documented here.
 
 - Added widget regression tests for screen-reader labels, invalid credentials, and sign-out.
 - Documented the current unit, widget, and integration test coverage in the README.
+- Pinned GitHub Actions to the verified Flutter 3.44.8 toolchain for reproducible analysis and builds.
 
 ## [2.1.0] — 2026-10-07
 
